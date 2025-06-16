@@ -1,0 +1,14 @@
+venv/
+.env
+chromadb/
+frontend/DATA/*
+pytest_cache
+.pytest_cache
+*/.pytest_cache
+**/__pycache__/
+.trunk/
+certbot/
+.local-ssl/
+nginx/.htpasswd
+nginx/.htpasswd_testers
+lightrag/

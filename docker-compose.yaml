@@ -1,0 +1,47 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - mcp-network
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - MONGODB_URI=mongodb://mongodb:27017/
+    depends_on:
+      - chromadb
+      - mongodb
+    networks:
+      - mcp-network
+
+  chromadb:
+    image: ghcr.io/chroma-core/chroma:latest  # Updated image name
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data/chromadb:/chroma/data
+    networks:
+      - mcp-network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/mongodb:/data/db
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
