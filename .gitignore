@@ -12,3 +12,4 @@ certbot/
 nginx/.htpasswd
 nginx/.htpasswd_testers
 lightrag/
+data/

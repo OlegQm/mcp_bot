@@ -7,7 +7,24 @@ import io
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 
-st.set_page_config(page_title="Tehotna Ukrajinka: Your Smart Assistant", page_icon="🤖")
+st.set_page_config(
+    page_title="Tehotna Ukrajinka: AI Assistant", 
+    page_icon="🤖"
+)
+
+@st.cache_data
+def get_processing_methods():
+    try:
+        response = requests.get(f"{BACKEND_URL}/methods")
+        if response.status_code == 200:
+            return response.json()["methods"]
+    except:
+        pass
+    return [
+        {"id": "langgraph", "name": "LangGraph + MCP", "description": "LangGraph with direct MCP"},
+        {"id": "mcp", "name": "MCP Direct", "description": "Direct MCP client"},
+        {"id": "langchain", "name": "LangChain + MCP", "description": "LangChain with MCP tools"},
+    ]
 
 def extract_text_from_pdf(pdf_file):
     try:
@@ -22,72 +39,96 @@ def extract_text_from_pdf(pdf_file):
         return None
 
 with st.sidebar:
-    st.title("Knowledge Base Management")
-    st.subheader("Upload Data")
-    uploaded_file = st.file_uploader("Choose a file", type=["txt", "csv", "md", "pdf"])
+    st.title("⚙️ Configuration")
+    
+    st.subheader("🔧 Processing Method")
+    methods = get_processing_methods()
+    method_options = {method["name"]: method["id"] for method in methods}
+    
+    selected_method_name = st.selectbox(
+        "Choose processing method:",
+        options=list(method_options.keys()),
+        help="Select how queries should be processed"
+    )
+    selected_method = method_options[selected_method_name]
+    
+    method_info = next(m for m in methods if m["id"] == selected_method)
+    st.info(f"📝 {method_info['description']}")
+    
+    mcp_integration = method_info.get("mcp_integration", "unknown")
+    if mcp_integration == "native":
+        st.success("🔗 Native MCP implementation")
+    elif mcp_integration == "direct":
+        st.success("🔗 Direct MCP integration")
+    elif mcp_integration == "indirect":
+        st.warning("🔧 MCP through LangChain wrappers")
+    
+    st.divider()
+    
+    st.subheader("📚 Knowledge Base")
+    uploaded_file = st.file_uploader(
+        "Upload document", 
+        type=["txt", "csv", "md", "pdf"]
+    )
+    
     if uploaded_file is not None:
-        st.write("Document Metadata:")
-        doc_type = st.selectbox("Document Type", ["article", "manual", "report", "reference"])
-        doc_topic = st.text_input("Document Topic", "")
-        with st.expander("Preview"):
+        doc_type = st.selectbox(
+            "Document Type", 
+            ["article", "manual", "report", "reference"]
+        )
+        doc_topic = st.text_input("Topic", "")
+        
+        with st.expander("📄 Preview"):
             if uploaded_file.type == "application/pdf":
                 extracted_text = extract_text_from_pdf(uploaded_file)
                 if extracted_text:
-                    st.text_area("PDF Content", extracted_text, height=200)
-                else:
-                    st.warning("Failed to extract text from PDF")
+                    st.text_area("Content", extracted_text[:500] + "...", height=150)
             else:
                 content = uploaded_file.getvalue().decode("utf-8")
-                st.text_area("File Content", content, height=200)
-        if st.button("Upload to Knowledge Base"):
+                st.text_area("Content", content[:500] + "...", height=150)
+                
+        if st.button("📤 Upload"):
             if uploaded_file.size > 0:
                 if uploaded_file.type == "application/pdf":
                     content = extract_text_from_pdf(uploaded_file)
                     if not content:
-                        st.error("Failed to extract text from PDF.")
+                        st.error("Failed to extract PDF text")
                         st.stop()
                 else:
                     content = uploaded_file.getvalue().decode("utf-8")
+                    
                 metadata = {
                     "type": doc_type,
                     "topic": doc_topic,
-                    "filename": uploaded_file.name,
-                    "file_type": uploaded_file.type
+                    "filename": uploaded_file.name
                 }
-                with st.spinner("Uploading to knowledge base..."):
+                
+                with st.spinner("Uploading..."):
                     try:
                         response = requests.post(
                             f"{BACKEND_URL}/upload_to_chromadb",
-                            json={
-                                "document": content,
-                                "metadata": metadata
-                            }
+                            json={"document": content, "metadata": metadata}
                         )
                         if response.status_code == 200:
-                            st.success("Document successfully uploaded to the knowledge base!")
+                            st.success("✅ Uploaded successfully!")
                         else:
-                            st.error(f"Upload error: {response.text}")
+                            st.error(f"❌ Upload failed: {response.text}")
                     except Exception as e:
-                        st.error(f"Connection error: {str(e)}")
-            else:
-                st.warning("Uploaded file is empty.")
-    if st.button("Show Knowledge Base Stats"):
+                        st.error(f"🔌 Connection error: {str(e)}")
+    
+    if st.button("📊 Database Stats"):
         try:
             response = requests.get(f"{BACKEND_URL}/chromadb_stats")
             if response.status_code == 200:
                 stats = response.json()
-                st.write(f"Documents in database: {stats['count']}")
+                st.metric("Documents", stats.get('count', 0))
                 if stats.get('collections'):
-                    st.write("Collections:")
-                    for collection in stats['collections']:
-                        st.write(f"- {collection}")
-            else:
-                st.error("Failed to get statistics")
+                    st.write("Collections:", ", ".join(stats['collections']))
         except Exception as e:
-            st.error(f"Connection error: {str(e)}")
+            st.error(f"Error: {str(e)}")
 
-st.title("Chat with Tehotna Ukrajinka! 🤖")
-st.write("Ask me anything, and I'll use my knowledge base to help!")
+st.title("🤖 Tehotna Ukrajinka")
+st.caption(f"Current method: **{selected_method_name}**")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -95,28 +136,66 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
+        
+        if message["role"] == "assistant" and message.get("tool_calls"):
+            with st.expander("🔧 Tool Usage"):
+                for i, tool_call in enumerate(message["tool_calls"]):
+                    st.write(f"**Tool {i+1}:**")
+                    st.code(json.dumps(tool_call, indent=2), language="json")
 
-query = st.chat_input("What's on your mind?")
+query = st.chat_input("Ask me anything...")
 
 if query:
     st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user"):
         st.write(query)
-    with st.spinner("Tehotna Ukrajinka is thinking..."):
+    
+    with st.spinner("🤔 Thinking..."):
         try:
-            response = requests.post(f"{BACKEND_URL}/query", json={"query": query}, timeout=60)
+            response = requests.post(
+                f"{BACKEND_URL}/query",
+                json={"query": query, "processing_method": selected_method},
+                timeout=60
+            )
             response.raise_for_status()
             result = response.json()
-            assistant_message = result.get("response", "Sorry, I couldn't process that request.")
-            st.session_state.messages.append({"role": "assistant", "content": assistant_message})
+            
+            assistant_message = result.get("response", "Sorry, I couldn't process that.")
+            tool_calls = result.get("tool_calls", [])
+            method_used = result.get("method", "Unknown")
+            
+            message_data = {
+                "role": "assistant", 
+                "content": assistant_message,
+                "tool_calls": tool_calls,
+                "method": method_used
+            }
+            st.session_state.messages.append(message_data)
+            
             with st.chat_message("assistant"):
                 st.write(assistant_message)
-                if "tool_calls" in result and result["tool_calls"]:
-                    with st.expander("See how I found this information"):
-                        for tool_call in result["tool_calls"]:
-                            st.write(f"📊 Used {tool_call['name']} tool")
-                            st.code(json.dumps(tool_call['args'], indent=2), language="json")
-                            st.write("Result:")
-                            st.code(json.dumps(tool_call['result'], indent=2), language="json")
+                
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    st.caption(f"Method: {method_used}")
+                with col2:
+                    if tool_calls:
+                        st.caption(f"Tools used: {len(tool_calls)}")
+                
+                if tool_calls:
+                    with st.expander("🔧 Tool Usage Details"):
+                        for i, tool_call in enumerate(tool_calls):
+                            st.write(f"**Tool {i+1}:**")
+                            st.code(json.dumps(tool_call, indent=2), language="json")
+                                
         except requests.RequestException as e:
-            st.error(f"Oops, something went wrong: {str(e)}")
+            st.error(f"🚨 Error: {str(e)}")
+
+with st.expander("ℹ️ Processing Methods Comparison"):
+    st.write("""
+    **MCP Direct**: Pure MCP implementation - fastest, most direct
+    
+    **LangGraph + MCP**: Structured workflow with state management and routing
+    
+    **LangChain + MCP**: Agent-based approach with tool orchestration
+    """)

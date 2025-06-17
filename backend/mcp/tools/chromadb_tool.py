@@ -16,6 +16,7 @@ class ChromaDBTool:
         for i in range(max_retries):
             try:
                 self.client = chromadb.HttpClient(host=self.host, port=self.port)
+                self.client.heartbeat()
                 break
             except Exception as e:
                 if i < max_retries - 1:
@@ -48,7 +49,12 @@ class ChromaDBTool:
             "Docker Compose is a tool for defining and running multi-container Docker applications.",
             "The Model Context Protocol (MCP) is a framework that enables AI models to use tools.",
             "Vector databases store data as high-dimensional vectors for semantic similarity search.",
-            "NoSQL databases provide flexible schema design for storing unstructured data."
+            "NoSQL databases provide flexible schema design for storing unstructured data.",
+            "LangChain is a framework for developing applications powered by language models.",
+            "LangGraph is a library for building stateful, multi-actor applications with LLMs.",
+            "Oleh Savchenko is a software developer who works with AI and machine learning technologies.",
+            "Python is a popular programming language used for AI, web development, and data science.",
+            "OpenAI provides powerful language models like GPT-4 for various applications."
         ]
         
         metadata = [
@@ -61,7 +67,12 @@ class ChromaDBTool:
             {"type": "definition", "topic": "docker"},
             {"type": "definition", "topic": "mcp"},
             {"type": "definition", "topic": "vector_databases"},
-            {"type": "definition", "topic": "nosql"}
+            {"type": "definition", "topic": "nosql"},
+            {"type": "definition", "topic": "langchain"},
+            {"type": "definition", "topic": "langgraph"},
+            {"type": "person", "topic": "developer"},
+            {"type": "definition", "topic": "programming"},
+            {"type": "definition", "topic": "ai"}
         ]
         
         ids = [f"doc_{i}" for i in range(len(documents))]
@@ -125,38 +136,54 @@ class ChromaDBTool:
         if not operation:
             return {"error": "Operation is required"}
             
-        if operation == "query":
-            return await self._execute_query(args)
-        elif operation == "add":
-            return await self._execute_add(args)
-        elif operation == "delete":
-            return await self._execute_delete(args)
-        elif operation == "stats":
-            return await self._execute_stats()
-        else:
-            return {"error": f"Unknown operation '{operation}'"}
+        try:
+            if operation == "query":
+                return await self._execute_query(args)
+            elif operation == "add":
+                return await self._execute_add(args)
+            elif operation == "delete":
+                return await self._execute_delete(args)
+            elif operation == "stats":
+                return await self._execute_stats()
+            else:
+                return {"error": f"Unknown operation '{operation}'"}
+        except Exception as e:
+            return {"error": f"Failed to execute {operation}: {str(e)}"}
 
     async def _execute_query(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a query operation."""
         query = args.get("query")
         n_results = args.get("n_results", 3)
-        filter_dict = args.get("filter", None)
+        filter_dict = args.get("filter")
         
         if not query:
             return {"error": "Query is required for query operation"}
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=n_results,
-            where=filter_dict
-        )
+        try:
+            query_args = {
+                "query_texts": [query],
+                "n_results": n_results
+            }
+            
+            if filter_dict and len(filter_dict) > 0:
+                query_args["where"] = filter_dict
+            
+            print(f"ChromaDB query args: {query_args}")
+            
+            results = self.collection.query(**query_args)
+            
+            print(f"ChromaDB raw results: {results}")
 
-        return {
-            "documents": results.get("documents", [[]])[0],
-            "metadatas": results.get("metadatas", [[]])[0],
-            "distances": results.get("distances", [[]])[0],
-            "ids": results.get("ids", [[]])[0]
-        }
+            return {
+                "documents": results.get("documents", [[]])[0],
+                "metadatas": results.get("metadatas", [[]])[0],
+                "distances": results.get("distances", [[]])[0],
+                "ids": results.get("ids", [[]])[0]
+            }
+            
+        except Exception as e:
+            print(f"ChromaDB query error: {str(e)}")
+            return {"error": f"Query failed: {str(e)}"}
 
     async def _execute_add(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an add operation."""
@@ -166,14 +193,17 @@ class ChromaDBTool:
         if not document:
             return {"error": "Document is required for add operation"}
 
-        doc_id = str(uuid.uuid4())
-        self.collection.add(
-            documents=[document],
-            metadatas=[metadata],
-            ids=[doc_id]
-        )
-        
-        return {"id": doc_id, "status": "added"}
+        try:
+            doc_id = str(uuid.uuid4())
+            self.collection.add(
+                documents=[document],
+                metadatas=[metadata],
+                ids=[doc_id]
+            )
+            
+            return {"id": doc_id, "status": "added"}
+        except Exception as e:
+            return {"error": f"Failed to add document: {str(e)}"}
     
     async def _execute_delete(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a delete operation."""
@@ -181,16 +211,22 @@ class ChromaDBTool:
         
         if not doc_id:
             return {"error": "ID is required for delete operation"}
-        self.collection.delete(ids=[doc_id])
         
-        return {"id": doc_id, "status": "deleted"}
+        try:
+            self.collection.delete(ids=[doc_id])
+            return {"id": doc_id, "status": "deleted"}
+        except Exception as e:
+            return {"error": f"Failed to delete document: {str(e)}"}
     
     async def _execute_stats(self) -> Dict[str, Any]:
         """Get statistics about the ChromaDB database."""
-        count = self.collection.count()
-        collections = [c.name for c in self.client.list_collections()]
-        
-        return {
-            "count": count,
-            "collections": collections
-        }
+        try:
+            count = self.collection.count()
+            collections = [c.name for c in self.client.list_collections()]
+            
+            return {
+                "count": count,
+                "collections": collections
+            }
+        except Exception as e:
+            return {"error": f"Failed to get stats: {str(e)}"}
