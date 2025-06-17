@@ -40,13 +40,11 @@ class TehotnaUkrajinkaAgent:
         await self.chromadb_tool.initialize()
         await self.mongodb_tool.initialize()
         
-        # Create LangChain tools
         mcp_tools = LangChainMCPTools(self.chromadb_tool, self.mongodb_tool)
         self.tools = mcp_tools.get_tools()
         
         print(f"Available tools: {[tool.name for tool in self.tools]}")
         
-        # Create agent prompt with better instructions
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are Tehotna Ukrajinka, a helpful AI assistant with access to a knowledge base and database.
 

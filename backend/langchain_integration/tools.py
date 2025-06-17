@@ -3,7 +3,6 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 import json
 import asyncio
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from mcp.tools.chromadb_tool import ChromaDBTool
@@ -210,7 +209,6 @@ class MongoDBQueryTool(BaseTool):
             
             print(f"MongoDB Query Result: {result}")
             
-            # Check for errors
             if "error" in result:
                 return json.dumps({"error": result["error"], "operation": operation, "collection": collection})
             
